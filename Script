@@ -1,116 +1,328 @@
-_G.HeadSize = Vector3.new(3.5, 5, 3.5) -- Adjust this value as needed
-_G.HumanoidRootPartSize = Vector3.new(5, 5, 5) -- Adjust this value as needed
-_G.Disabled = false
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
-local localPlayer = game:GetService('Players').LocalPlayer
+local LocalPlayer = Players.LocalPlayer
 
-local function scaleHitbox(character)
-    if character then
-        local head = character:FindFirstChild("Head")
-        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+local ESPEnabled = true
+local ESPs = {}
+local Highlights = {}
 
-        if head then
-            local mesh = head:FindFirstChildOfClass("SpecialMesh")
-            if mesh then
-                mesh.Scale = Vector3.new(_G.HeadSize.X / head.Size.X, _G.HeadSize.Y / head.Size.Y, _G.HeadSize.Z / head.Size.Z)
-            else
-                -- If the head doesn't have a SpecialMesh, create one
-                local newMesh = Instance.new("SpecialMesh", head)
-                newMesh.Scale = Vector3.new(_G.HeadSize.X / head.Size.X, _G.HeadSize.Y / head.Size.Y, _G.HeadSize.Z / head.Size.Z)
+
+local notifications = {}
+
+local function addKillNotification(killer, victim)
+    local notif = {
+        text = killer.Name .. " killed " .. victim.Name,
+        time = tick()
+    }
+    table.insert(notifications, notif)
+end
+
+local function drawNotifications()
+    local screenGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not screenGui then return end
+    
+    local notifFrame = screenGui:FindFirstChild("KillNotificationFrame")
+    if not notifFrame then
+        notifFrame = Instance.new("Frame")
+        notifFrame.Name = "KillNotificationFrame"
+        notifFrame.Parent = screenGui
+        notifFrame.Size = UDim2.new(0, 300, 0, 150)
+        notifFrame.Position = UDim2.new(1, -310, 1, -160)
+        notifFrame.BackgroundTransparency = 0.5
+        notifFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+        notifFrame.BorderSizePixel = 0
+    end
+    
+    for _, child in pairs(notifFrame:GetChildren()) do
+        if child:IsA("TextLabel") then
+            child:Destroy()
+        end
+    end
+    
+    local yOffset = 0
+    for i, notif in ipairs(notifications) do
+        local age = tick() - notif.time
+        if age < 10 then
+            local label = Instance.new("TextLabel")
+            label.Parent = notifFrame
+            label.Size = UDim2.new(1, 0, 0, 25)
+            label.Position = UDim2.new(0, 0, 0, yOffset)
+            label.Text = "🔪 " .. notif.text
+            label.TextColor3 = Color3.fromRGB(255, 50, 50)
+            label.BackgroundTransparency = 1
+            label.TextSize = 14
+            label.Font = Enum.Font.SourceSansBold
+            label.TextXAlignment = Enum.TextXAlignment.Right
+            
+            if age > 8 then
+                local fade = 1 - ((age - 8) / 2)
+                label.TextTransparency = fade
             end
-            head.Size = _G.HeadSize
-            head.CanCollide = false -- Disable collision for the head
-        end
-
-        if humanoidRootPart then
-            humanoidRootPart.Size = _G.HumanoidRootPartSize
-            humanoidRootPart.Transparency = 0.7
-            humanoidRootPart.BrickColor = BrickColor.new("Really blue")
-            humanoidRootPart.Material = "Neon"
-            humanoidRootPart.CanCollide = false
+            
+            yOffset = yOffset + 28
         end
     end
+    
+    notifFrame.Visible = #notifications > 0
 end
 
-local function resizeParts(character)
-    local head = character:FindFirstChild("Head")
-    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-
-    if not head then
-        -- Create a new head if it doesn't exist
-        local newHead = Instance.new("Part")
-        newHead.Name = "Head"
-        newHead.Size = _G.HeadSize
-        newHead.Parent = character
-    else
-        head.Size = _G.HeadSize
-        head.CanCollide = false -- Disable collision for the head
+local function setupKillListener()
+    local function onCharacterAdded(player)
+        local character = player.Character
+        if character then
+            local humanoid = character:WaitForChild("Humanoid")
+            humanoid.Died:Connect(function()
+                local killer = humanoid:FindFirstChild("LastDamager")
+                if killer and killer.Value then
+                    if killer.Value ~= LocalPlayer then
+                        addKillNotification(killer.Value, player)
+                    end
+                end
+            end)
+        end
     end
-
-    if humanoidRootPart then
-        humanoidRootPart.Size = _G.HumanoidRootPartSize
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            player.CharacterAdded:Connect(onCharacterAdded)
+            if player.Character then
+                onCharacterAdded(player)
+            end
+        end
     end
-end
-
-local function onCharacterAdded(character)
-    -- Wait for the character to load completely
-    character:WaitForChild("Humanoid")
-
-    -- Resize parts
-    resizeParts(character)
-
-    -- Connect to Humanoid's Died event to handle respawn
-    character:WaitForChild("Humanoid").Died:Connect(function()
-        -- Wait for the character to respawn
-        character:WaitForChild("Humanoid").Died:Wait()
-
-        -- Resize parts again after respawn
-        resizeParts(character)
+    
+    Players.PlayerAdded:Connect(function(player)
+        if player ~= LocalPlayer then
+            player.CharacterAdded:Connect(onCharacterAdded)
+        end
     end)
 end
 
-local function onPlayerAdded(player)
-    -- Check if the player is not the local player
-    if player ~= localPlayer then
-        -- Connect to the CharacterAdded event
-        player.CharacterAdded:Connect(onCharacterAdded)
 
-        -- Apply resizing if the character already exists
-        if player.Character then
-            onCharacterAdded(player.Character)
-        end
+local function setupPrompt(prompt)
+    prompt.HoldDuration = 0
+end
+
+for _, obj in pairs(workspace:GetDescendants()) do
+    if obj:IsA("ProximityPrompt") then
+        setupPrompt(obj)
     end
 end
 
--- Connect to the PlayerAdded event to handle players joining the game
-game:GetService('Players').PlayerAdded:Connect(onPlayerAdded)
+workspace.DescendantAdded:Connect(function(obj)
+    if obj:IsA("ProximityPrompt") then
+        setupPrompt(obj)
+    end
+end)
 
--- Apply resizing to all current players
-for _, player in ipairs(game:GetService('Players'):GetPlayers()) do
-    onPlayerAdded(player)
-end
 
--- Continuous loop to ensure hitboxes remain scaled
-game:GetService('RunService').RenderStepped:Connect(function()
-    if not _G.Disabled then
-        for _, player in pairs(game:GetService('Players'):GetPlayers()) do
-            if player ~= localPlayer then
-                pcall(function() 
-                    scaleHitbox(player.Character)
-                    -- Ensure head size is maintained
-                    if player.Character and player.Character:FindFirstChild("Head") then
-                        player.Character.Head.Size = _G.HeadSize
-                        player.Character.Head.CanCollide = false -- Disable collision for the head
-                    end
-                end)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+
+    if gameProcessed then
+        return
+    end
+
+    if input.KeyCode == Enum.KeyCode.H then
+
+        ESPEnabled = not ESPEnabled
+
+        for _, esp in pairs(ESPs) do
+            if esp then
+                esp.Enabled = ESPEnabled
+            end
+        end
+
+        for _, h in pairs(Highlights) do
+            if h then
+                h.Enabled = ESPEnabled
             end
         end
     end
 end)
 
--- Disable collision with the local player's character
-localPlayer.CharacterAdded:Connect(disableCollision)
 
-if localPlayer.Character then
-    disableCollision(localPlayer.Character)
+local function getInventory(player)
+
+    local items = {}
+
+    local backpack = player:FindFirstChild("Backpack")
+
+    if backpack then
+        for _, tool in pairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") then
+                table.insert(items, tool.Name)
+            end
+        end
+    end
+
+    if player.Character then
+        for _, tool in pairs(player.Character:GetChildren()) do
+            if tool:IsA("Tool") then
+                table.insert(items, "[EQUIPPED] "..tool.Name)
+            end
+        end
+    end
+
+    return table.concat(items, ", ")
 end
+
+
+local function getHealth(player)
+    local character = player.Character
+    if character then
+        local humanoid = character:FindFirstChild("Humanoid")
+        if humanoid then
+            return math.floor(humanoid.Health)
+        end
+    end
+    return 0
+end
+
+
+local function isBlackened(player)
+
+    local value = player:FindFirstChild("Blackened")
+
+    if value and value:IsA("ObjectValue") then
+        return true
+    end
+
+    return false
+end
+
+
+local function createESP(player)
+
+    if player == LocalPlayer then
+        return
+    end
+
+    local function onCharacter(character)
+
+        local head = character:WaitForChild("Head")
+
+        -- REMOVE OLD
+        if head:FindFirstChild("InventoryESP") then
+            head.InventoryESP:Destroy()
+        end
+
+        if character:FindFirstChild("ESPHighlight") then
+            character.ESPHighlight:Destroy()
+        end
+
+
+        local billboard = Instance.new("BillboardGui")
+
+        billboard.Name = "InventoryESP"
+        billboard.Parent = head
+
+        billboard.Adornee = head
+        billboard.AlwaysOnTop = true
+
+        billboard.Size = UDim2.new(0, 200, 0, 50)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+
+        billboard.MaxDistance = 100
+        billboard.LightInfluence = 0
+
+        local text = Instance.new("TextLabel")
+
+        text.Parent = billboard
+        text.Size = UDim2.new(1,0,1,0)
+
+        text.BackgroundTransparency = 1
+
+        text.TextScaled = false
+        text.TextSize = 14
+
+        text.Font = Enum.Font.SourceSansBold
+        text.TextStrokeTransparency = 0
+
+        ESPs[player] = billboard
+
+
+        local highlight = Instance.new("Highlight")
+
+        highlight.Name = "ESPHighlight"
+        highlight.Parent = character
+
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+
+        highlight.FillTransparency = 0.5
+        highlight.OutlineTransparency = 0
+
+        Highlights[player] = highlight
+
+
+        RunService.RenderStepped:Connect(function()
+
+            if not player.Character then
+                return
+            end
+
+            if not ESPs[player] then
+                return
+            end
+
+            local inventory = getInventory(player)
+
+            if inventory == "" then
+                inventory = "Empty"
+            end
+
+            local status = "INNOCENT"
+
+            -- BLACKENED = RED
+            if isBlackened(player) then
+
+                status = "BLACKENED"
+
+                text.TextColor3 = Color3.fromRGB(255,0,0)
+
+                highlight.FillColor = Color3.fromRGB(255,0,0)
+                highlight.OutlineColor = Color3.fromRGB(255,0,0)
+
+            else
+
+                -- INNOCENT = BLUE
+                text.TextColor3 = Color3.fromRGB(0,170,255)
+
+                highlight.FillColor = Color3.fromRGB(0,170,255)
+                highlight.OutlineColor = Color3.fromRGB(0,170,255)
+            end
+
+            local health = getHealth(player)
+
+            text.Text =
+                player.Name ..
+                "\n"..health.." HP" ..
+                "\n["..status.."]" ..
+                "\n"..inventory
+
+            billboard.Enabled = ESPEnabled
+            highlight.Enabled = ESPEnabled
+        end)
+    end
+
+    if player.Character then
+        onCharacter(player.Character)
+    end
+
+    player.CharacterAdded:Connect(onCharacter)
+end
+
+
+RunService.RenderStepped:Connect(function()
+    drawNotifications()
+end)
+
+
+for _, player in pairs(Players:GetPlayers()) do
+    createESP(player)
+end
+
+Players.PlayerAdded:Connect(createESP)
+
+setupKillListener()
